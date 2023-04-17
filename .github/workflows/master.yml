@@ -1,28 +1,23 @@
-name: Check build after pull request on master
+name: Check build on master
 
-on: 
+on:
   push:
-    branches:
-      - master
+    branches: 
+      - main
 
 jobs:
-  masterbuilder:
-    runs-on: self-hosted
+  pushbuilder:
+    runs-on: ubuntu-latest
     container:
       image: obspher/ubuntu-dev:1.1.4
       env:
         CONAN_USER_HOME: /home/conan
-      volumes:
-        - /home/obs-vision/github/conan:/home/conan
       credentials:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
     steps:
       - name: Check out
         uses: actions/checkout@v2
-
-      - name: Check stability
-        run: bash -c "! grep -P "@obspher/dev" conanfile.py"
 
       - name: Create build directory
         run: mkdir build
@@ -32,6 +27,13 @@ jobs:
 
       - name: Conan user
         run: export CONAN_REVISIONS_ENABLED=1;conan user -p cmVmdGtuOjAxOjE3MTIxNDg1NTI6WEJSV25hM0NXRkFQZkdtNmhJMldzRXRHelV5 -r origin obspher@obspher.com
+
+      - name: Artifact dependencies download
+        uses: actions/download-artifact@v2
+        with:
+          path: /home/conan/.conan/data
+          name: shared-conan-artifact
+        continue-on-error: true
 
       - name: Install conan dependencies
         working-directory: ./build
@@ -47,17 +49,15 @@ jobs:
       - name: Dynamic analysis on unit tests
         run: echo valgrind --leak-check=full --show-reachable=yes --trace-children=yes --error-exitcode=33 ./build/bin/unit_test
 
-      - name: Get conan package name
-        id: conan_infos
-        run: |
-          echo "::set-output name=name::$(conan inspect . --raw name)\n"
-          echo "::set-output name=version::$(conan inspect . --raw version)\n"
-
       - name: Export conan package
         run: export CONAN_REVISIONS_ENABLED=1;conan export-pkg . -bf ./build -f
 
-      - name: Conan create
-        run: export CONAN_REVISIONS_ENABLED=1;conan create .
+      #- name: Upload on conan server
+      #  run: export CONAN_REVISIONS_ENABLED=1;conan upload ${{steps.conan_infos.outputs.name}}/${{steps.conan_infos.outputs.version}}
 
-      - name: Upload on conan server
-        run: export CONAN_REVISIONS_ENABLED=1;conan upload ${{steps.conan_infos.outputs.name}}/${{steps.conan_infos.outputs.version}}
+      - name: Artifact dependencies upload
+        uses: actions/upload-artifact@v2
+        with:
+          path: /home/conan/.conan/data
+          name: shared-conan-artifact
+          retention-days: 0
