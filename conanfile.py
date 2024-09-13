@@ -1,6 +1,6 @@
 from conans import ConanFile, CMake
 
-class TestWorkflow2(ConanFile):
+class TestWorkflow2(ConanFile): 
     name = "test_workflow2"
     version = "1.0.0"
     settings = "os", "compiler", "build_type", "arch"
