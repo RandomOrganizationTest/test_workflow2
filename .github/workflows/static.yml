@@ -2,9 +2,9 @@ name: Check and Print Condition
 
 on:
   pull_request:
-    types: [closed]   # Trigger when a PR is closed (merged or not)
+    types: [closed]
     branches:
-      - main          # Only for PRs targeting the main branch
+      - main
 
 jobs:
   check-branch:
@@ -14,7 +14,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Fetch all history to ensure branch deletion works
+          fetch-depth: 0
 
       - name: Set up Node.js (required for GitHub API requests)
         uses: actions/setup-node@v3
@@ -29,7 +29,6 @@ jobs:
           else
             echo "Pull request was not merged."
             exit 1
-          fi
 
       - name: Get the merged branch name
         if: ${{ env.MERGED_BRANCH }}
@@ -43,36 +42,42 @@ jobs:
           BRANCH_TEST="${{ env.MERGED_BRANCH }}"
           BASE_BRANCH="main"
           TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          
-          # Get the list of all repositories in the organization
+
+          # Get a list of repositories
           repos=$(curl -s -H "Authorization: token $TOKEN" \
             "https://api.github.com/orgs/$ORG_NAME/repos?per_page=100" | jq -r '.[].name')
 
           branch_merged=true
+          merged_repo_names=""
 
-          # Loop through each repository
           for repo in $repos; do
-            echo "Checking repository: $repo"
-
-            # Compare the base (main) and head (branch to check) branches for each repo
             response=$(curl -s -H "Authorization: token $TOKEN" \
               "https://api.github.com/repos/$ORG_NAME/$repo/compare/$BASE_BRANCH...$BRANCH_TEST" | jq -r '.status')
 
             if [[ "$response" == "identical" || "$response" == "behind" ]]; then
               echo "Branch $BRANCH_TEST has already been merged into $BASE_BRANCH in repository $repo"
+              merged_repo_names="$merged_repo_names,$repo"
             else
               echo "Branch $BRANCH_TEST is not merged into $BASE_BRANCH in repository $repo"
               branch_merged=false
             fi
           done
 
-          # Set the result for branch merged across all repositories
+          # Remove leading comma from the merged_repo_names
+          merged_repo_names=${merged_repo_names#,}
+
           if [[ "$branch_merged" == true ]]; then
             echo "BRANCH_MERGED=true" >> $GITHUB_ENV
+            echo "MERGED_REPO_NAMES=$merged_repo_names" >> $GITHUB_ENV
           else
             echo "BRANCH_MERGED=false" >> $GITHUB_ENV
-          fi
 
-      - name: Print "test" if branch does not exist in other repositories
-        if: ${{ env.BRANCH_EXISTS_IN_OTHER_REPO == 'false' }}
+      - name: Print "test" if no branches exist in other repositories
+        if: ${{ env.BRANCH_MERGED == 'false' }}
         run: echo "test"
+
+      - name: Run conan install if no branches exist in other repositories
+        if: ${{ env.BRANCH_MERGED == 'false' }}
+        run: |
+          echo "Running conan install..."
+          conan install --build=update --build=cascade --build=missing --build="${{ env.MERGED_REPO_NAMES }}"
